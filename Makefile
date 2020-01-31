@@ -1,4 +1,4 @@
 .PHONY: test
 
 test:
-	PYTHONPATH=. pytest -s -vv test
+	poetry run pytest -s -vv test

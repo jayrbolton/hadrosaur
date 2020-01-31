@@ -1,8 +1,13 @@
 [tool.poetry]
 name = "hadrosaur"
-version = "0.0.1"
-description = ""
+version = "0.0.3"
+description = "[WIP] Manage a large amount of computed resources, such as files, imports, etc."
 authors = ["Jay R Bolton <jayrbolton@gmail.com>"]
+readme = "README.md"
+homepage = "https://github.com/jayrbolton/hadrosaur"
+documentation = "https://github.com/jayrbolton/hadrosaur"
+repository = "https://github.com/jayrbolton/hadrosaur"
+license = "MIT"
 
 [tool.poetry.dependencies]
 python = ">=3.6"

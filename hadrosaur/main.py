@@ -2,7 +2,6 @@ import traceback
 import sys
 import json
 import os
-from io import StringIO
 
 _STATUS_FILENAME = 'status.json'
 _ERR_FILENAME = 'error.log'
@@ -10,6 +9,8 @@ _RESULT_FILENAME = 'result.json'
 _STDOUT_FILENAME = 'stdout.log'
 _STDERR_FILENAME = 'stderr.log'
 _STORAGE_DIRNAME = 'storage'
+
+# TODO record start time, completion time, and run time
 
 
 class Project:
@@ -72,18 +73,22 @@ class Project:
         print('Computing the requested resource')
         # Write status as pending
         status['pending'] = True
+        status['error'] = False
         with open(paths['status'], 'w') as fd:
             # TODO try/except
             json.dump(status, fd)
         # Save stdout and stderr from the function to a string
         old_stdout = sys.stdout
         old_stderr = sys.stderr
-        mystdout = StringIO()
-        mystderr = StringIO()
+        mystdout = open(paths['stdout'], 'w')
+        mystderr = open(paths['stderr'], 'w')
         sys.stdout = mystdout
         sys.stderr = mystderr
         if args is None:
             args = {}
+        # Clear the error file
+        with open(paths['error'], 'w') as fd:
+            fd.write('')
         try:
             result = func(ident, args, paths['storage'])
         except Exception:
@@ -97,12 +102,10 @@ class Project:
                 json.dump(status, fd)
             return {'result': None, 'status': status, 'paths': paths}
         finally:
+            mystdout.close()
+            mystderr.close()
             sys.stdout = old_stdout
             sys.stderr = old_stderr
-            with open(os.path.join(entry_path, 'stdout.log'), 'w') as fd:
-                fd.write(mystdout.getvalue())
-            with open(os.path.join(entry_path, 'stderr.log'), 'w') as fd:
-                fd.write(mystderr.getvalue())
         with open(result_path, 'w') as fd:
             # TODO try/except
             json.dump(result, fd)
