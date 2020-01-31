@@ -55,12 +55,12 @@ def test_fetch_valid():
     entry_dir = os.path.join(res_dir, '1')
     assert os.path.exists(entry_dir)
     assert os.path.isdir(entry_dir)
-    with open(os.path.join(entry_dir, 'hello.txt')) as fd:
-        content = fd.read()
-        assert content == 'hello world'
-    paths = ['hello.txt', 'result.json', 'stdout.log', 'status.json', 'stderr.log']
+    paths = ['storage/hello.txt', 'result.json', 'stdout.log', 'status.json', 'stderr.log']
     for p in paths:
         assert os.path.exists(os.path.join(entry_dir, p))
+    with open(os.path.join(result['paths']['storage'], 'hello.txt')) as fd:
+        content = fd.read()
+        assert content == 'hello world'
     expected_status = {'completed': True, 'error': False, 'pending': False}
     with open(os.path.join(entry_dir, 'status.json')) as fd:
         status = json.load(fd)

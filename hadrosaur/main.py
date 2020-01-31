@@ -9,6 +9,7 @@ _ERR_FILENAME = 'error.log'
 _RESULT_FILENAME = 'result.json'
 _STDOUT_FILENAME = 'stdout.log'
 _STDERR_FILENAME = 'stderr.log'
+_STORAGE_DIRNAME = 'storage'
 
 
 class Project:
@@ -45,12 +46,21 @@ class Project:
         func = res['func']
         dirpath = res['dir']
         entry_path = os.path.join(dirpath, ident)
+        paths = {
+            'base': entry_path,
+            'error': os.path.join(entry_path, _ERR_FILENAME),
+            'stdout': os.path.join(entry_path, _STDOUT_FILENAME),
+            'stderr': os.path.join(entry_path, _STDERR_FILENAME),
+            'status': os.path.join(entry_path, _STATUS_FILENAME),
+            'result': os.path.join(entry_path, _RESULT_FILENAME),
+            'storage': os.path.join(entry_path, _STORAGE_DIRNAME),
+        }
         os.makedirs(entry_path, exist_ok=True)
+        os.makedirs(paths['storage'], exist_ok=True)
         # Check the current status of the resource
-        status_path = os.path.join(entry_path, _STATUS_FILENAME)
         status = {'completed': False, 'pending': True, 'error': False}  # type: dict
-        if os.path.exists(status_path):
-            with open(status_path) as fd:
+        if os.path.exists(paths['status']):
+            with open(paths['status']) as fd:
                 status = json.load(fd)
             if status.get('pending'):
                 raise RuntimeError("Resource is already being computed and is pending")
@@ -58,11 +68,11 @@ class Project:
         if not recompute and status.get('completed'):
             with open(result_path) as fd:
                 print('Resource is already computed')
-                return {'result': json.load(fd), 'status': status}
+                return {'result': json.load(fd), 'status': status, 'paths': paths}
         print('Computing the requested resource')
         # Write status as pending
         status['pending'] = True
-        with open(status_path, 'w') as fd:
+        with open(paths['status'], 'w') as fd:
             # TODO try/except
             json.dump(status, fd)
         # Save stdout and stderr from the function to a string
@@ -75,17 +85,17 @@ class Project:
         if args is None:
             args = {}
         try:
-            result = func(ident, args, entry_path)
+            result = func(ident, args, paths['storage'])
         except Exception:
             status['error'] = True
             err_str = traceback.format_exc()
             with open(os.path.join(entry_path, _ERR_FILENAME), 'a') as fd:
                 fd.write(err_str)
-            with open(status_path, 'w') as fd:
+            with open(paths['status'], 'w') as fd:
                 status['error'] = True
                 status['pending'] = False
                 json.dump(status, fd)
-            return {'result': None, 'status': status}
+            return {'result': None, 'status': status, 'paths': paths}
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
@@ -100,7 +110,7 @@ class Project:
         status['error'] = False
         status['pending'] = False
         # Write to status file
-        with open(status_path, 'w') as fd:
+        with open(paths['status'], 'w') as fd:
             # TODO try/except
             json.dump(status, fd)
-        return {'result': result, 'status': status}
+        return {'result': result, 'status': status, 'paths': paths, 'paths': paths}
