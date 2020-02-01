@@ -11,6 +11,9 @@ _RESULT_FILENAME = 'result.json'
 _STORAGE_DIRNAME = 'storage'
 _LOG_FILENAME = 'run.log'
 
+# TODO log colors
+# TODO hard rest on recompute (delete everything first)
+
 
 class Project:
 
@@ -68,7 +71,7 @@ class Project:
         result_path = os.path.join(entry_path, _RESULT_FILENAME)
         if not recompute and status.get('completed'):
             with open(result_path) as fd:
-                print('Resource is already computed')
+                print(f'Resource "{ident}" in "{resource_name}" is already computed')
                 return {'result': json.load(fd), 'status': status, 'paths': paths}
 
         # Handle control-C interrupts
@@ -83,7 +86,7 @@ class Project:
         signal.signal(signal.SIGINT, exit_gracefully)
 
         # Compute the resource
-        print('Computing the requested resource')
+        print('Computing resource "{ident}" in "{resource_name}"')
         # Write status as pending
         status['pending'] = True
         status['error'] = False
