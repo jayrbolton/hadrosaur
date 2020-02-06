@@ -60,7 +60,7 @@ def test_fetch_valid():
     assert status['completed'] is True
     assert status['error'] is False
     assert status['pending'] is False
-    assert status['start_time'] < status['end_time']
+    assert status['start_time'] <= status['end_time']
     assert result['result']['val'] > 0
     with open(os.path.join(entry_dir, 'result.json')) as fd:
         assert json.load(fd)['val'] > 0
@@ -126,6 +126,42 @@ def test_refetch_precomputed_error():
     assert result2['status']['error'] is True
     assert result2['status']['pending'] is False
     assert result2['status']['start_time'] <= result2['status']['end_time']
+
+
+def test_col_status_valid():
+    status = proj.status('test')
+    assert status == {'counts': {'total': 2, 'pending': 1, 'completed': 1, 'error': 0, 'unknown': 0}}
+
+
+def test_col_resource_status_valid():
+    """
+    Relies on test/1 being present
+    """
+    status = proj.status('test', 1)
+    assert status['completed'] is True
+    assert status['pending'] is False
+    assert status['error'] is False
+
+
+def test_fetch_log_valid():
+    """
+    Relies on test/1 being present
+    """
+    log = proj.fetch_log('test', 1)
+    assert 'this should go into run.log' in log
+
+
+def test_fetch_error_valid():
+    """
+    Relies on test/1 being present
+    """
+    error = proj.fetch_error('always_error', 1)
+    assert "This is an error!" in error
+
+
+def test_find_by_status():
+    ids = proj.find_by_status('test', completed=True)
+    assert ids == ['1']
 
 
 def test_fetch_delayed():

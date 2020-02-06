@@ -28,15 +28,18 @@ Define a collection using a decorator around a function. The collection should h
 
 * `ident` — an identifier (unique across the collection) for each computed resource
 * `args` — a dictionary of optional arguments
-* `subdir` — the path of a directory in which you can store files for this resource
+* `ctx` — a Context object which holds some extra data you may find useful in the function:
+  * `ctx.subdir` - the path of a directory in which you can store files for this resource
+  * `ctx.logger` - a special Python logging instance that will write to a rotating log file stored in the resource directory, with some nice default formatting
 
 ```py
 @proj.resource('collection_name')
-def compute_resource(ident, args, subdir):
+def compute_resource(ident, args, ctx):
+  ctx.logger.info("Starting up")
   # Run some things...
-  # Maybe save stuff into subdir... 
+  # Maybe save stuff into ctx.subdir...
   time.sleep(1)
-  # Return metadata for the resource, such as run results, filepaths, etc.
+  # Return any JSON-serializable data for the resource, such as metadata, run results, filepaths, etc.
   return {'ts': time.time()}
 ```
 
@@ -77,4 +80,72 @@ Descriptions of each of the returned fields:
   * `'stderr`': A line-by-line log of stderr messages printed by the resource's function (any `sys.stderr.write` calls)
   * `'status'`: a JSON object of status keys for the resource ("completed", "pending", "error")
   * `'result'`: Any JSON serializable data returned by the resource's function
-  * `'storage'`: Additional storage for any files written by the resource's function 
+  * `'storage'`: Additional storage for any files written by the resource's function
+
+### Fetch status and information 
+
+#### Fetch stats for a collection
+
+To see status counts for a whole collection, use `proj.status('collection_name')`:
+
+```py
+> proj.status('collection_name')
+{
+  'counts': {
+      'total': 100,
+      'pending': 75,
+      'completed': 20,
+      'error': 5,
+      'unknown': 0
+  }
+}
+```
+
+To get a list of resource IDs for a given status, use `proj.fetch_by_status`:
+
+```py
+> proj.fetch_by_status('collection_name', pending=True)
+['1', '2', '3'..]
+> proj.fetch_by_status('collection_name', completed=True)
+['4', '5', '6'..]
+> proj.fetch_by_status('collection_name', error=True)
+['7', '8', '9'..]
+```
+
+### Fetch info about a single resource
+
+Use `proj.status('collection_name', 'resource_id')` to see the status of a particular resource.
+
+```py
+> proj.status('collection_name', 'resource_id')
+{
+    "completed": true,
+    "pending": false,
+    "error": false,
+    "start_time": 1580948135917,
+    "end_time": 1580948135919
+}
+```
+
+If an exception was raised during the execution of the function used to compute
+a resource, then use `proj.fetch_error` to see the error.
+
+```py
+> proj.fetch_error('collection_name', 'resource_id')
+"""Traceback (most recent call last):
+  File "/home/j/code/hadrosaur/hadrosaur/main.py", line 211, in fetch
+    result = func(ident, args, ctx)
+  File "/home/j/code/hadrosaur/test/test_general.py", line 26, in throw_something
+    raise RuntimeError('This is an error!')
+RuntimeError: This is an error!"""
+```
+
+To see the run log (produced by `ctx.logger` during function execution), then use `proj.fetch_log`
+
+```py
+> proj.fetch_log('collection_name', 'resource_id')
+"""
+2020-02-05 16:15:35 INFO     output here (test_general.py:25)
+2020-02-05 16:15:35 INFO     more output here (test_general.py:25)
+"""
+```

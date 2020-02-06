@@ -39,6 +39,128 @@ class Project:
             return func
         return wrapper
 
+    def status(self, coll_name=None, resource_id=None):
+        """
+        Fetch some aggregated statistics about a collection.
+        """
+        if coll_name and resource_id:
+            return self._resource_status(coll_name, resource_id)
+        elif coll_name:
+            return self._coll_status(coll_name)
+        else:
+            raise TypeError("Pass in a collection name or both a collection name and resource ID.")
+
+    def _validate_coll_name(self, coll_name):
+        """
+        Make sure the collection exists for this project.
+        """
+        if coll_name not in self.resources:
+            raise RuntimeError(f"Unknown collection '{coll_name}'")
+        coll_path = os.path.join(self.basedir, coll_name)
+        if not os.path.isdir(coll_path):
+            raise RuntimeError(f"Collection directory `{coll_path}` is missing")
+
+    def _validate_resource_id(self, coll_name, resource_id):
+        """
+        Make sure the collection and resource exists
+        """
+        self._validate_coll_name(coll_name)
+        res_path = os.path.join(self.basedir, coll_name, resource_id)
+        if not os.path.isdir(res_path):
+            raise RuntimeError(f"Resource '{resource_id}' located at `{res_path}` does not exist.")
+
+    def fetch_error(self, coll_name, resource_id):
+        """
+        Fetch the Python stack trace for a resource, if present
+        """
+        resource_id = str(resource_id)
+        self._validate_resource_id(coll_name, resource_id)
+        err_path = os.path.join(self.basedir, coll_name, resource_id, _ERR_FILENAME)
+        if not os.path.isfile(err_path):
+            return ''
+        with open(err_path) as fd:
+            return fd.read()
+
+    def fetch_log(self, coll_name, resource_id):
+        """
+        Fetch the run log for a resource, if present
+        """
+        resource_id = str(resource_id)
+        self._validate_resource_id(coll_name, resource_id)
+        log_path = os.path.join(self.basedir, coll_name, resource_id, _LOG_FILENAME)
+        if not os.path.isfile(log_path):
+            return ''
+        with open(log_path) as fd:
+            return fd.read()
+
+    def _resource_status(self, coll_name, resource_id):
+        """
+        Fetch stats for a single resource
+        """
+        resource_id = str(resource_id)
+        self._validate_resource_id(coll_name, resource_id)
+        res_path = os.path.join(self.basedir, coll_name, resource_id)
+        status_path = os.path.join(res_path, 'status.json')
+        with open(status_path) as fd:
+            status = json.load(fd)
+        return status
+
+    def _coll_status(self, coll_name):
+        """
+        Fetch stats for a whole resource
+        """
+        self._validate_coll_name(coll_name)
+        coll_path = os.path.join(self.basedir, coll_name)
+        subdirs = os.listdir(coll_path)
+        total = len(subdirs)
+        pending = 0
+        completed = 0
+        error = 0
+        unknown = 0
+        for subdir in subdirs:
+            stat_path = os.path.join(coll_path, subdir, 'status.json')
+            if not os.path.isfile(stat_path):
+                unknown += 1
+                continue
+            with open(stat_path) as fd:
+                try:
+                    status = json.load(fd)
+                except Exception:
+                    unknown += 1
+                    continue
+            if status['completed']:
+                completed += 1
+            elif status['pending']:
+                pending += 1
+            elif status['error']:
+                pending += 1
+            else:
+                unknown += 1
+        return {
+            'counts': {
+                'total': total,
+                'pending': pending,
+                'completed': completed,
+                'error': error,
+                'unknown': unknown
+            }
+        }
+
+    def find_by_status(self, coll_name, pending=False, completed=False, error=False):
+        """
+        Return a list of resource ids for a collection based on their current status
+        """
+        self._validate_coll_name(coll_name)
+        coll_dir = os.path.join(self.basedir, coll_name)
+        ids = []
+        for resource_id in os.listdir(coll_dir):
+            status_path = os.path.join(coll_dir, resource_id, _STATUS_FILENAME)
+            with open(status_path) as fd:
+                status = json.load(fd)
+            if status['pending'] == pending and status['completed'] == completed and status['error'] == error:
+                ids.append(resource_id)
+        return ids
+
     def fetch(self, resource_name, ident, args=None, recompute=False):
         """
         Compute a new entry for a resource, or fetch the precomputed entry.
@@ -126,6 +248,10 @@ class Project:
 
 
 class Context:
+    """
+    This is an object that is passed as the last argument to every resource function.
+    Supplies extra contextual data, if needed, for computing the resource.
+    """
 
     def __init__(self, coll_name, base_path):
         self.subdir = os.path.join(base_path, _STORAGE_DIRNAME)
