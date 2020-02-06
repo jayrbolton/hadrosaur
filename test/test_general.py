@@ -47,6 +47,7 @@ def test_fetch_valid():
     """
     res_dir = 'tmp/test'
     result = proj.fetch('test', 1)
+    assert result['result']['val'] > 0
     entry_dir = os.path.join(res_dir, '1')
     assert os.path.isdir(entry_dir)
     paths = ['storage/hello.txt', 'result.json', 'run.log']
@@ -55,16 +56,17 @@ def test_fetch_valid():
     with open(os.path.join(result['paths']['storage'], 'hello.txt')) as fd:
         content = fd.read()
         assert content == 'hello world'
-    with open(os.path.join(entry_dir, 'status.json')) as fd:
-        status = json.load(fd)
-    assert status['completed'] is True
-    assert status['error'] is False
-    assert status['pending'] is False
-    assert status['start_time'] <= status['end_time']
-    assert result['result']['val'] > 0
-    with open(os.path.join(entry_dir, 'result.json')) as fd:
+    with open(result['paths']['status']) as fd:
+        status = fd.read()
+    assert status == 'completed'
+    with open(result['paths']['start_time']) as fd:
+        start_time = int(fd.read())
+    with open(result['paths']['end_time']) as fd:
+        end_time = int(fd.read())
+    assert start_time <= end_time
+    with open(result['paths']['result']) as fd:
         assert json.load(fd)['val'] > 0
-    with open(os.path.join(entry_dir, 'run.log')) as fd:
+    with open(result['paths']['log']) as fd:
         assert 'this should go into run.log' in fd.read()
 
 
@@ -74,21 +76,23 @@ def test_fetch_py_err():
     """
     entry_dir = os.path.join(basedir, 'always_error', '1')
     result = proj.fetch('always_error', 1)
-    paths = ['error.log', 'status.json', 'run.log']
+    assert result['result'] is None
+    paths = ['error.log', 'status', 'run.log', 'start_time', 'end_time']
     for p in paths:
         assert os.path.exists(os.path.join(entry_dir, p))
-    with open(os.path.join(entry_dir, 'run.log')) as fd:
+    with open(result['paths']['log']) as fd:
         assert 'output here' in fd.read()
-    with open(os.path.join(entry_dir, 'error.log')) as fd:
+    with open(result['paths']['error']) as fd:
         assert 'This is an error!' in fd.read()
-    with open(os.path.join(entry_dir, 'status.json')) as fd:
-        status = json.load(fd)
-    assert status['completed'] is False
-    assert status['error'] is True
-    assert status['pending'] is False
-    assert status['start_time'] <= status['end_time']
+    with open(result['paths']['status']) as fd:
+        status = fd.read()
+    assert status == 'error'
     assert result['status'] == status
-    assert result['result'] is None
+    with open(result['paths']['start_time']) as fd:
+        start_time = int(fd.read())
+    with open(result['paths']['end_time']) as fd:
+        end_time = int(fd.read())
+    assert start_time <= end_time
 
 
 def test_refetch_precomputed_valid_cache():
@@ -118,14 +122,10 @@ def test_refetch_precomputed_error():
     """
     result1 = proj.fetch('test', 1)
     result2 = proj.fetch('test', 2, {'throw_error': True})
-    assert result1['status']['completed'] is True
-    assert result1['status']['error'] is False
-    assert result1['status']['pending'] is False
-    assert result1['status']['start_time'] <= result1['status']['end_time']
-    assert result2['status']['completed'] is False
-    assert result2['status']['error'] is True
-    assert result2['status']['pending'] is False
-    assert result2['status']['start_time'] <= result2['status']['end_time']
+    assert result1['status'] == 'completed'
+    assert result1['start_time'] <= result1['end_time']
+    assert result2['status'] == 'error'
+    assert result2['start_time'] <= result2['end_time']
 
 
 def test_col_status_valid():
@@ -138,9 +138,7 @@ def test_col_resource_status_valid():
     Relies on test/1 being present
     """
     status = proj.status('test', 1)
-    assert status['completed'] is True
-    assert status['pending'] is False
-    assert status['error'] is False
+    assert status == 'completed'
 
 
 def test_fetch_log_valid():
@@ -160,8 +158,8 @@ def test_fetch_error_valid():
 
 
 def test_find_by_status():
-    ids = proj.find_by_status('test', completed=True)
-    assert ids == ['1']
+    ids = proj.find_by_status('test', 'completed')
+    assert ids == ['1', '2']
 
 
 def test_fetch_delayed():
@@ -170,21 +168,27 @@ def test_fetch_delayed():
     Keep this test last to avoid upfront sleeping.
     """
     entry_dir = os.path.join(basedir, 'delayed', '1')
-    status_path = os.path.join(entry_dir, 'status.json')
+    status_path = os.path.join(entry_dir, 'status')
+    start_path = os.path.join(entry_dir, 'start_time')
+    end_path = os.path.join(entry_dir, 'end_time')
     proc = multiprocessing.Process(target=proj.fetch, args=('delayed', 1), daemon=True)
     proc.start()
-    time.sleep(0.15)  # Allow some time for status.json to be written
+    time.sleep(0.25)  # Allow some time for the status to be written
     with open(status_path) as fd:
-        status = json.load(fd)
-    assert status['completed'] is False
-    assert status['error'] is False
-    assert status['pending'] is True
-    assert status['start_time'] > 0
-    assert status['end_time'] is None
+        status = fd.read()
+    with open(start_path) as fd:
+        start_time = int(fd.read())
+    with open(end_path) as fd:
+        end_time = fd.read()
+    assert status == 'pending'
+    assert start_time > 0
+    assert end_time == ''
     time.sleep(3)
     with open(status_path) as fd:
-        status = json.load(fd)
-    assert status['completed'] is True
-    assert status['error'] is False
-    assert status['pending'] is False
-    assert status['start_time'] <= status['end_time']
+        status = fd.read()
+    with open(start_path) as fd:
+        start_time = int(fd.read())
+    with open(end_path) as fd:
+        end_time = int(fd.read())
+    assert status == 'completed'
+    assert start_time <= end_time

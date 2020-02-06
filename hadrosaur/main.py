@@ -5,7 +5,9 @@ import json
 import os
 import logging
 
-_STATUS_FILENAME = 'status.json'
+_START_FILENAME = 'start_time'
+_END_FILENAME = 'end_time'
+_STATUS_FILENAME = 'status'
 _ERR_FILENAME = 'error.log'
 _RESULT_FILENAME = 'result.json'
 _STORAGE_DIRNAME = 'storage'
@@ -100,9 +102,9 @@ class Project:
         resource_id = str(resource_id)
         self._validate_resource_id(coll_name, resource_id)
         res_path = os.path.join(self.basedir, coll_name, resource_id)
-        status_path = os.path.join(res_path, 'status.json')
+        status_path = os.path.join(res_path, _STATUS_FILENAME)
         with open(status_path) as fd:
-            status = json.load(fd)
+            status = fd.read()
         return status
 
     def _coll_status(self, coll_name):
@@ -118,21 +120,17 @@ class Project:
         error = 0
         unknown = 0
         for subdir in subdirs:
-            stat_path = os.path.join(coll_path, subdir, 'status.json')
+            stat_path = os.path.join(coll_path, subdir, _STATUS_FILENAME)
             if not os.path.isfile(stat_path):
                 unknown += 1
                 continue
             with open(stat_path) as fd:
-                try:
-                    status = json.load(fd)
-                except Exception:
-                    unknown += 1
-                    continue
-            if status['completed']:
+                status = fd.read()
+            if status == 'completed':
                 completed += 1
-            elif status['pending']:
+            elif status == 'pending':
                 pending += 1
-            elif status['error']:
+            elif status == 'error':
                 pending += 1
             else:
                 unknown += 1
@@ -146,7 +144,7 @@ class Project:
             }
         }
 
-    def find_by_status(self, coll_name, pending=False, completed=False, error=False):
+    def find_by_status(self, coll_name, status='completed'):
         """
         Return a list of resource ids for a collection based on their current status
         """
@@ -156,8 +154,8 @@ class Project:
         for resource_id in os.listdir(coll_dir):
             status_path = os.path.join(coll_dir, resource_id, _STATUS_FILENAME)
             with open(status_path) as fd:
-                status = json.load(fd)
-            if status['pending'] == pending and status['completed'] == completed and status['error'] == error:
+                status = fd.read()
+            if status == status:
                 ids.append(resource_id)
         return ids
 
@@ -167,84 +165,89 @@ class Project:
         """
         if resource_name not in self.resources:
             raise RuntimeError(f"No such resource: {resource_name}")
+        start_time = int(time.time() * 1000)
+        # Return value
+        ret = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
         ident = str(ident)
         res = self.resources[resource_name]
         func = res['func']
         dirpath = res['dir']
         entry_path = os.path.join(dirpath, ident)
-        paths = {
+        ret['paths'] = {
             'base': entry_path,
             'error': os.path.join(entry_path, _ERR_FILENAME),
             'log': os.path.join(entry_path, _LOG_FILENAME),
             'status': os.path.join(entry_path, _STATUS_FILENAME),
+            'start_time': os.path.join(entry_path, _START_FILENAME),
+            'end_time': os.path.join(entry_path, _END_FILENAME),
             'result': os.path.join(entry_path, _RESULT_FILENAME),
             'storage': os.path.join(entry_path, _STORAGE_DIRNAME),
         }
         os.makedirs(entry_path, exist_ok=True)
-        os.makedirs(paths['storage'], exist_ok=True)
+        os.makedirs(ret['paths']['storage'], exist_ok=True)
         # Check the current status of the resource
-        status = {'completed': False, 'pending': True, 'error': False}  # type: dict
-        if os.path.exists(paths['status']):
-            with open(paths['status']) as fd:
-                status = json.load(fd)
-            if status.get('pending'):
+        if os.path.exists(ret['paths']['status']):
+            with open(ret['paths']['status']) as fd:
+                ret['status'] = fd.read()
+            if ret['status'] == 'pending':
                 raise RuntimeError("Resource is already being computed and is pending")
         # Check if it's already computed
         result_path = os.path.join(entry_path, _RESULT_FILENAME)
-        if not recompute and status.get('completed'):
+        if not recompute and ret['status'] == 'completed':
             with open(result_path) as fd:
                 print(f'Resource "{ident}" in "{resource_name}" is already computed')
-                return {'result': json.load(fd), 'status': status, 'paths': paths}
+                ret['result'] = json.load(fd)
+            with open(ret['paths']['start_time']) as fd:
+                ret['start_time'] = int(fd.read())
+            with open(ret['paths']['end_time']) as fd:
+                ret['end_time'] = int(fd.read())
+            return ret
 
         # Handle control-C interrupts
         def exit_gracefully(signum, frame):
             print('Cleaning up job')
-            status['pending'] = False
-            status['completed'] = False
-            status['error'] = False
-            status['end_time'] = int(time.time() * 1000)
-            with open(paths['status'], 'w') as fd:
-                json.dump(status, fd)
+            ret['status'] = 'error'
+            with open(ret['paths']['status'], 'w') as fd:
+                fd.write('error')
+            _write_time(ret['paths']['end_time'])
         signal.signal(signal.SIGINT, exit_gracefully)
 
         # Compute the resource
-        print('Computing resource "{ident}" in "{resource_name}"')
-        # Write status as pending
-        status['pending'] = True
-        status['error'] = False
-        status['start_time'] = int(time.time() * 1000)
-        status['end_time'] = None
-        with open(paths['status'], 'w') as fd:
-            json.dump(status, fd)
+        print(f'Computing resource "{ident}" in "{resource_name}"')
+        # Write placeholder files
+        to_overwrite = [_RESULT_FILENAME, _ERR_FILENAME, _LOG_FILENAME, _END_FILENAME]
+        for fn in to_overwrite:
+            _touch(os.path.join(ret['paths']['base'], fn), overwrite=True)
+        # Write out status and start time
+        with open(ret['paths']['status'], 'w') as fd:
+            fd.write('pending')
+        print(f"Wrote to {ret['paths']['status']}")
+        _write_time(ret['paths']['start_time'], ts=start_time)
+        # Clear the error file
+        _touch(ret['paths']['error'])
         if args is None:
             args = {}
-        # Clear the error file
-        with open(paths['error'], 'w') as fd:
-            fd.write('')
         ctx = Context(resource_name, entry_path)
         try:
-            result = func(ident, args, ctx)
+            ret['result'] = func(ident, args, ctx)
         except Exception:
-            status['error'] = True
-            err_str = traceback.format_exc()
+            # There was an error running the resource's function
+            format_exc = traceback.format_exc()
             with open(os.path.join(entry_path, _ERR_FILENAME), 'a') as fd:
-                fd.write(err_str)
-            with open(paths['status'], 'w') as fd:
-                status['error'] = True
-                status['pending'] = False
-                status['end_time'] = int(time.time() * 1000)
-                json.dump(status, fd)
-            return {'result': None, 'status': status, 'paths': paths}
+                fd.write(format_exc)
+            with open(ret['paths']['status'], 'w') as fd:
+                fd.write('error')
+            ret['end_time'] = _write_time(ret['paths']['end_time'])
+            ret['status'] = 'error'
+            return ret
+        ret['status'] = 'completed'
         with open(result_path, 'w') as fd:
-            json.dump(result, fd)
-        status['completed'] = True
-        status['error'] = False
-        status['pending'] = False
-        status['end_time'] = int(time.time() * 1000)
+            json.dump(ret['result'], fd)
         # Write to status file
-        with open(paths['status'], 'w') as fd:
-            json.dump(status, fd)
-        return {'result': result, 'status': status, 'paths': paths, 'paths': paths}
+        with open(ret['paths']['status'], 'w') as fd:
+            fd.write('completed')
+        ret['end_time'] = _write_time(ret['paths']['end_time'])
+        return ret
 
 
 class Context:
@@ -271,3 +274,22 @@ class Context:
         self.logger.addHandler(ch)
         self.logger.setLevel(logging.DEBUG)
         print(f'Logging to {log_path} -- {self.logger}')
+
+
+def _write_time(path, ts=None):
+    """
+    Write the current time in ms to the file at path.
+    Returns the generated timestamp.
+    """
+    if not ts:
+        ts = int(time.time() * 1000)
+    with open(path, 'w') as fd:
+        fd.write(str(ts))
+    return ts
+
+
+def _touch(path, overwrite=False):
+    """Write a blank file to path. Overwrites."""
+    if overwrite or not os.path.exists(path):
+        with open(path, 'w') as fd:
+            fd.write('')
