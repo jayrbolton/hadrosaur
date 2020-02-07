@@ -159,7 +159,7 @@ def test_fetch_error_valid():
 
 def test_find_by_status():
     ids = proj.find_by_status('test', 'completed')
-    assert ids == ['1', '2']
+    assert set(ids) == {'1', '2'}
 
 
 def test_fetch_delayed():
@@ -189,6 +189,6 @@ def test_fetch_delayed():
     with open(start_path) as fd:
         start_time = int(fd.read())
     with open(end_path) as fd:
-        end_time = int(fd.read())
+        end_time_int = int(fd.read())
     assert status == 'completed'
-    assert start_time <= end_time
+    assert start_time <= end_time_int

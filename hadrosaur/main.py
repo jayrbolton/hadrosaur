@@ -167,7 +167,7 @@ class Project:
             raise RuntimeError(f"No such resource: {resource_name}")
         start_time = int(time.time() * 1000)
         # Return value
-        ret = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
+        ret: dict = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
         ident = str(ident)
         res = self.resources[resource_name]
         func = res['func']
@@ -189,8 +189,6 @@ class Project:
         if os.path.exists(ret['paths']['status']):
             with open(ret['paths']['status']) as fd:
                 ret['status'] = fd.read()
-            if ret['status'] == 'pending':
-                raise RuntimeError("Resource is already being computed and is pending")
         # Check if it's already computed
         result_path = os.path.join(entry_path, _RESULT_FILENAME)
         if not recompute and ret['status'] == 'completed':
