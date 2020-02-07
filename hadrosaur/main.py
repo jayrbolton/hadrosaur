@@ -1,4 +1,3 @@
-import signal
 import time
 import traceback
 import json
@@ -14,7 +13,6 @@ _STORAGE_DIRNAME = 'storage'
 _LOG_FILENAME = 'run.log'
 
 # TODO log colors
-# TODO hard rest on recompute (delete everything first)
 
 
 class Project:
@@ -24,20 +22,20 @@ class Project:
             raise RuntimeError(f"Project base path is not a directory: {basepath}")
         os.makedirs(basepath, exist_ok=True)
         self.basedir = basepath
-        self.resources = {}  # type: dict
+        self.collections = {}  # type: dict
         self.logger = logging.getLogger(basepath)
 
     def resource(self, name):
         """
         Define a new resource by name and function
         """
-        if name in self.resources:
+        if name in self.collections:
             raise RuntimeError(f"Resource name has already been used: '{name}'")
         res_path = os.path.join(self.basedir, name)
         os.makedirs(res_path, exist_ok=True)
 
         def wrapper(func):
-            self.resources[name] = {'func': func, 'dir': res_path}
+            self.collections[name] = {'func': func, 'dir': res_path}
             return func
         return wrapper
 
@@ -56,7 +54,7 @@ class Project:
         """
         Make sure the collection exists for this project.
         """
-        if coll_name not in self.resources:
+        if coll_name not in self.collections:
             raise RuntimeError(f"Unknown collection '{coll_name}'")
         coll_path = os.path.join(self.basedir, coll_name)
         if not os.path.isdir(coll_path):
@@ -159,17 +157,17 @@ class Project:
                 ids.append(resource_id)
         return ids
 
-    def fetch(self, resource_name, ident, args=None, recompute=False):
+    def fetch(self, coll_name, ident, args=None, recompute=False):
         """
         Compute a new entry for a resource, or fetch the precomputed entry.
         """
-        if resource_name not in self.resources:
-            raise RuntimeError(f"No such resource: {resource_name}")
+        if coll_name not in self.collections:
+            raise RuntimeError(f"No such collection: {coll_name}")
         start_time = int(time.time() * 1000)
         # Return value
-        ret = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
+        ret: dict = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
         ident = str(ident)
-        res = self.resources[resource_name]
+        res = self.collections[coll_name]
         func = res['func']
         dirpath = res['dir']
         entry_path = os.path.join(dirpath, ident)
@@ -189,13 +187,11 @@ class Project:
         if os.path.exists(ret['paths']['status']):
             with open(ret['paths']['status']) as fd:
                 ret['status'] = fd.read()
-            if ret['status'] == 'pending':
-                raise RuntimeError("Resource is already being computed and is pending")
         # Check if it's already computed
         result_path = os.path.join(entry_path, _RESULT_FILENAME)
         if not recompute and ret['status'] == 'completed':
             with open(result_path) as fd:
-                print(f'Resource "{ident}" in "{resource_name}" is already computed')
+                print(f'Resource "{ident}" in "{coll_name}" is already computed')
                 ret['result'] = json.load(fd)
             with open(ret['paths']['start_time']) as fd:
                 ret['start_time'] = int(fd.read())
@@ -203,17 +199,8 @@ class Project:
                 ret['end_time'] = int(fd.read())
             return ret
 
-        # Handle control-C interrupts
-        def exit_gracefully(signum, frame):
-            print('Cleaning up job')
-            ret['status'] = 'error'
-            with open(ret['paths']['status'], 'w') as fd:
-                fd.write('error')
-            _write_time(ret['paths']['end_time'])
-        signal.signal(signal.SIGINT, exit_gracefully)
-
         # Compute the resource
-        print(f'Computing resource "{ident}" in "{resource_name}"')
+        print(f'Computing resource "{ident}" in "{coll_name}"')
         # Write placeholder files
         to_overwrite = [_RESULT_FILENAME, _ERR_FILENAME, _LOG_FILENAME, _END_FILENAME]
         for fn in to_overwrite:
@@ -227,7 +214,7 @@ class Project:
         _touch(ret['paths']['error'])
         if args is None:
             args = {}
-        ctx = Context(resource_name, entry_path)
+        ctx = Context(coll_name, entry_path)
         try:
             ret['result'] = func(ident, args, ctx)
         except Exception:
