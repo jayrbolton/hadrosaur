@@ -163,7 +163,7 @@ class Project:
         """
         if coll_name not in self.collections:
             raise RuntimeError(f"No such collection: {coll_name}")
-        start_time = int(time.time() * 1000)
+        start_time = _time()
         # Return value
         ret: dict = {'start_time': start_time, 'end_time': None, 'result': None, 'status': 'pending'}
         ident = str(ident)
@@ -193,10 +193,18 @@ class Project:
             with open(result_path) as fd:
                 print(f'Resource "{ident}" in "{coll_name}" is already computed')
                 ret['result'] = json.load(fd)
-            with open(ret['paths']['start_time']) as fd:
-                ret['start_time'] = int(fd.read())
-            with open(ret['paths']['end_time']) as fd:
-                ret['end_time'] = int(fd.read())
+            if os.path.exists(ret['paths']['start_time']):
+                with open(ret['paths']['start_time']) as fd:
+                    try:
+                        ret['start_time'] = int(fd.read())
+                    except ValueError:
+                        ret['start_time'] = time.time()
+            if os.path.exists(ret['paths']['end_time']):
+                with open(ret['paths']['end_time']) as fd:
+                    try:
+                        ret['end_time'] = int(fd.read())
+                    except ValueError:
+                        ret['end_time'] = _time()
             return ret
 
         # Compute the resource
@@ -263,13 +271,17 @@ class Context:
         print(f'Logging to {log_path} -- {self.logger}')
 
 
+def _time():
+    return int(time.time() * 1000)
+
+
 def _write_time(path, ts=None):
     """
     Write the current time in ms to the file at path.
     Returns the generated timestamp.
     """
     if not ts:
-        ts = int(time.time() * 1000)
+        ts = _time()
     with open(path, 'w') as fd:
         fd.write(str(ts))
     return ts
