@@ -1,4 +1,3 @@
-import signal
 import time
 import traceback
 import json
@@ -200,15 +199,6 @@ class Project:
             with open(ret['paths']['end_time']) as fd:
                 ret['end_time'] = int(fd.read())
             return ret
-
-        # Handle control-C interrupts
-        def exit_gracefully(signum, frame):
-            print('Cleaning up job')
-            ret['status'] = 'error'
-            with open(ret['paths']['status'], 'w') as fd:
-                fd.write('error')
-            _write_time(ret['paths']['end_time'])
-        signal.signal(signal.SIGINT, exit_gracefully)
 
         # Compute the resource
         print(f'Computing resource "{ident}" in "{resource_name}"')
