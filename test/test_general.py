@@ -10,7 +10,7 @@ shutil.rmtree(basedir, ignore_errors=True)
 proj = Project(basedir)
 
 
-@proj.resource('test')
+@proj.collection('test')
 def compute_test_resource(ident, args, ctx):
     ctx.logger.debug('this should go into run.log')
     if args.get('throw_error'):
@@ -20,13 +20,13 @@ def compute_test_resource(ident, args, ctx):
     return {'val': time.time()}
 
 
-@proj.resource('always_error')
+@proj.collection('always_error')
 def throw_something(ident, args, ctx):
     ctx.logger.info('output here')
     raise RuntimeError('This is an error!')
 
 
-@proj.resource('delayed')
+@proj.collection('delayed')
 def delay_stuff(ident, args, subdir):
     time.sleep(3)
     return {'val': time.time()}
