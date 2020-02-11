@@ -83,6 +83,14 @@ version = ">=0.12"
 dev = ["pre-commit", "tox"]
 
 [[package]]
+category = "main"
+description = "Plyvel, a fast and feature-rich Python interface to LevelDB"
+name = "plyvel"
+optional = false
+python-versions = "*"
+version = "1.2.0"
+
+[[package]]
 category = "dev"
 description = "library with cross-python path, ini-parsing, io, code, log facilities"
 name = "py"
@@ -154,7 +162,7 @@ docs = ["sphinx", "jaraco.packaging (>=3.2)", "rst.linker (>=1.9)"]
 testing = ["jaraco.itertools"]
 
 [metadata]
-content-hash = "2f95f5604873fdd700288d3813a98f7f58d8397b4861354b377a16a21927a754"
+content-hash = "e3abab710431e2f20249d5de5d8ca8a5b52fbbaca5265e70d0d7b217e6053a00"
 python-versions = ">=3.6"
 
 [metadata.files]
@@ -185,6 +193,15 @@ packaging = [
 pluggy = [
     {file = "pluggy-0.13.1-py2.py3-none-any.whl", hash = "sha256:966c145cd83c96502c3c3868f50408687b38434af77734af1e9ca461a4081d2d"},
     {file = "pluggy-0.13.1.tar.gz", hash = "sha256:15b2acde666561e1298d71b523007ed7364de07029219b604cf808bfa1c765b0"},
+]
+plyvel = [
+    {file = "plyvel-1.2.0-cp27-cp27m-manylinux1_x86_64.whl", hash = "sha256:ada56f3e515f25cece9cbb90eb68edabbb6586d4f7222c6315c8616b6d205c85"},
+    {file = "plyvel-1.2.0-cp27-cp27mu-manylinux1_x86_64.whl", hash = "sha256:41213ead7ca8ba49c7e9a6431764806f8f80714a448705692fa09fb41c48cc37"},
+    {file = "plyvel-1.2.0-cp35-cp35m-manylinux1_x86_64.whl", hash = "sha256:b2842147b200f4b7c339d7ddc937c207909c2a42c4850c27997027dd51960839"},
+    {file = "plyvel-1.2.0-cp36-cp36m-manylinux1_x86_64.whl", hash = "sha256:477e7a936c1612fc3a392168640667d6f65d76c9f2c5bb0ebbe9ea1958e9f724"},
+    {file = "plyvel-1.2.0-cp37-cp37m-manylinux1_x86_64.whl", hash = "sha256:9ced37cfd30de697f92542af50a119c001e6badef01ea4644514ecccf0893f77"},
+    {file = "plyvel-1.2.0-cp38-cp38-manylinux1_x86_64.whl", hash = "sha256:553a319907092ec7bbd8b2bb534f310d59a29217c0b6ffcfecca42195db58d10"},
+    {file = "plyvel-1.2.0.tar.gz", hash = "sha256:3d681b689524c98093877e8ddfa7692a4f5b6437d699cb9f81841b1351916ff6"},
 ]
 py = [
     {file = "py-1.8.1-py2.py3-none-any.whl", hash = "sha256:c20fdd83a5dbc0af9efd622bee9a5564e278f6380fffcacc43ba6f43db2813b0"},
