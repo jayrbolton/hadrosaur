@@ -2,7 +2,9 @@
 
 ![logo](docs/logo.jpg)
 
-Do you want to compute thousands of resources (files, metadata, database imports, etc) in parallel, but have a hard time tracking completion status, errors, logs, and other runtime data? That's what this is for.
+Do you want to compute thousands of (probably asynchronous) jobs that compute some set of resources (files, metadata, database imports, etc) in parallel, but have a hard time tracking completion status, errors, logs, and other runtime data? That's what this is for.
+
+This library uses a combination of LevelDB and the file system to track logs, errors, and run state for your tasks.
 
 > **Work in progress**
 
@@ -24,11 +26,13 @@ from hadrosaur import Project
 proj = Project('./base_directory')
 ```
 
-Define a collection using a decorator around a function. The collection should have a unique name and must take these params:
+Define a collection using a decorator around a function. This function's job is to generate a single resource for the collection given a unique ID and some arguments.
+
+The collection should have a unique name, and its function must take these params:
 
 * `ident` — an identifier (unique across the collection) for each computed resource
 * `args` — a dictionary of optional arguments
-* `ctx` — a Context object which holds some extra data you may find useful in the function:
+* `ctx` — a Context object which holds some extra data you may find useful during computation:
   * `ctx.subdir` - the path of a directory in which you can store files for this resource
   * `ctx.logger` - a special Python logging instance that will write to a rotating log file stored in the resource directory, with some nice default formatting
 
@@ -66,12 +70,10 @@ What happens when you fetch a resource:
 
 The resource object has the following properties:
 
-Descriptions of each of the returned fields:
-
 * `resource.result`: any JSON-serializable data returned by the resource's compute function
 * `resource.start_time`: The unix epoch (in milliseconds) of when the resource started being computed
 * `eresource.end_time`: the unix epoch (in ms) of when the resource finished computing (or failed)
-* `resource.status`: whether the resource has been computed already ("completed"), is currently being computed ("pending"), or threw a Python error while running the function ("error")
+* `resource.status`: whether the resource has been computed already ("completed"), is currently being computed ("pending"), has not yet been fetched at all ("unavailable"), or threw a Python error while running the function ("error")
 * `resource.paths`: A dictionary of all the filesystem paths associated with your resource, with the following keys:
   * `'base'`: The base directory that holds all data for the resource
   * `'error'`: A Python stacktrace of any error that occured while running the resource's function
@@ -114,13 +116,7 @@ Use `proj.status('collection_name', 'resource_id')` to see the status of a parti
 
 ```py
 > proj.status('collection_name', 'resource_id')
-{
-    "completed": true,
-    "pending": false,
-    "error": false,
-    "start_time": 1580948135917,
-    "end_time": 1580948135919
-}
+"complete"
 ```
 
 If an exception was raised during the execution of the function used to compute
