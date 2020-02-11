@@ -3,7 +3,6 @@ import time
 import json
 import os
 import logging
-from enum import Enum
 import threading
 import traceback
 
@@ -18,28 +17,15 @@ _LOG_FILENAME = 'run.log'
 # TODO log colors
 
 
-class Status(Enum):
-    """
-    Valid resource status values
-    """
-    COMPLETE = b'complete'
-    ERROR = b'error'
-    PENDING = b'pending'
-
-
 class Collection:
 
     def __init__(self, proj_dir, name, func):
         self.func = func
         self.name = name
         self.basedir = os.path.join(proj_dir, name)
-        self.status_path = os.path.join(self.basedir, 'status.json')
         os.makedirs(self.basedir, exist_ok=True)
-        status_path = os.path.join(self.basedir, '.status')
-        self.db_status = plyvel.DB(status_path, create_if_missing=True)
-
-    def exit(self):
-        self.db_status.close()
+        db_status_path = os.path.join(self.basedir, '.status')
+        self.db_status = plyvel.DB(db_status_path, create_if_missing=True)
 
 
 class Project:
@@ -349,18 +335,3 @@ def _read_time(path):
             return int(fd.read())
         except ValueError:
             return None
-
-
-def _get_path(obj, keys):
-    """
-    Fetch a path out of a dict or list. Returns none if the path does not exist.
-    eg. _get_path({'x': {'y': 1}}, ('x', 'y')) => 1
-    eg. _get_path({'x': {'y': 1}}, ('x', 'z', 'q')) => None
-    """
-    curr = obj
-    for key in keys:
-        try:
-            curr = obj[key]
-        except Exception:
-            return None
-    return curr
