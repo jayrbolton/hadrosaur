@@ -45,71 +45,67 @@ def compute_resource(ident, args, ctx):
 
 ### Fetch a resource
 
-Use the `proj.fetch(collection_name, ident, args)` method to compute and cache resources in a collection.
+Use the `proj.fetch(collection_name, ident)` method to compute and cache resources in a collection.
 
-* If the resource has not yet been computed, the function will be run
-* If the resource was already computed in the past, then the saved results will get returned instantly
+Keyword arguments:
+
+* `args` -- an optional dict of extra arguments for the resource compute function
+* `block` -- boolean (default False) of whether to synchronously wait for the execution of the compute function. If non-blocking, then the function will run in a Python thread and the resource's status will be set to "pending". Call fetch again later to see if the function has completed and the resource status is "complete".
+* `recompute` -- force the resource to be re-computed, even if it has already been computed
+
+What happens when you fetch a resource:
+
+* If the resource has not yet been computed, the collection's compute function will be run.
+* If the resource was already computed in the past, then the saved results will get returned instantly (unless `recompute=True` has been set in the keyword arguments).
 * If an error is thrown in the function, logs will be saved and the status will be updated
-* If the function is backgrounded, then fetching the resource will show a "pending" status
 
 ```py
 >> proj.fetch('collection_name', 'uniq_ident123', optional_args)
-{
-  'result': {'some': 'metadata'},
-  'status': {'completed': True, 'pending': False, 'error': False},
-  '_paths': {
-    'base': 'base_directory/collection_name/uniq_ident123',
-    'error': 'base_directory/collection_name/uniq_ident123/error.log',
-    'stdout': 'base_directory/collection_name/uniq_ident123/stdout.log',
-    'stderr': 'base_directory/collection_name/uniq_ident123/stderr.log',
-    'status': 'base_directory/collection_name/uniq_ident123/status.json',
-    'result': 'base_directory/collection_name/uniq_ident123/result.json',
-    'storage': 'base_directory/collection_name/uniq_ident123/storage/'
-  }
-}
+<Resource>
 ```
+
+The resource object has the following properties:
 
 Descriptions of each of the returned fields:
 
-* `'result'`: any JSON-serializable data returned by the resource's function
-* `'status'`: whether the resource has been computed already ("completed"), is currently being computed ("pending"), or threw a Python error while running the function ("error")
-* `'paths'`: All the various filesystem paths associated with your resource
+* `resource.result`: any JSON-serializable data returned by the resource's compute function
+* `resource.start_time`: The unix epoch (in milliseconds) of when the resource started being computed
+* `eresource.end_time`: the unix epoch (in ms) of when the resource finished computing (or failed)
+* `resource.status`: whether the resource has been computed already ("completed"), is currently being computed ("pending"), or threw a Python error while running the function ("error")
+* `resource.paths`: A dictionary of all the filesystem paths associated with your resource, with the following keys:
   * `'base'`: The base directory that holds all data for the resource
   * `'error'`: A Python stacktrace of any error that occured while running the resource's function
-  * `'stdout`': A line-by-line log file of stdout produced by the resource's function (any `print()` calls)
-  * `'stderr`': A line-by-line log of stderr messages printed by the resource's function (any `sys.stderr.write` calls)
-  * `'status'`: a JSON object of status keys for the resource ("completed", "pending", "error")
-  * `'result'`: Any JSON serializable data returned by the resource's function
-  * `'storage'`: Additional storage for any files written by the resource's function
+  * `'log`': A line-by-line log file produced by the resource's logger (`ctx.logger`)
+  * `'status'`: Path to the current status ("unavailable", "completed", "pending", "error")
+  * `'result'`: Path to a JSON file of serializable data returned by the resource's function
+  * `'storage'`: Directory path of additional files written by the resource's function (`ctx.subdir`)
 
 ### Fetch status and information 
 
 #### Fetch stats for a collection
 
-To see status counts for a whole collection, use `proj.status('collection_name')`:
+To see status counts for a whole collection, use `proj.stats('collection_name')`:
 
 ```py
-> proj.status('collection_name')
+> proj.stats('collection_name')
 {
   'counts': {
       'total': 100,
       'pending': 75,
       'completed': 20,
       'error': 5,
-      'unknown': 0
+      'unavailable': 0
   }
 }
 ```
 
+Use `proj.stats()` without an argument to fetch the stats for all collections.
+
 To get a list of resource IDs for a given status, use `proj.fetch_by_status`:
 
 ```py
-> proj.fetch_by_status('collection_name', pending=True)
+> proj.fetch_by_status('collection_name', 'pending')
 ['1', '2', '3'..]
-> proj.fetch_by_status('collection_name', completed=True)
-['4', '5', '6'..]
-> proj.fetch_by_status('collection_name', error=True)
-['7', '8', '9'..]
 ```
 
 ### Fetch info about a single resource
