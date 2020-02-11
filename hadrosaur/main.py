@@ -35,7 +35,7 @@ class Collection:
         self.basedir = os.path.join(proj_dir, name)
         self.status_path = os.path.join(self.basedir, 'status.json')
         os.makedirs(self.basedir, exist_ok=True)
-        status_path = os.path.join(self.basedir, 'status')
+        status_path = os.path.join(self.basedir, '.status')
         self.db_status = plyvel.DB(status_path, create_if_missing=True)
 
     def exit(self):
@@ -64,16 +64,28 @@ class Project:
             return func
         return wrapper
 
-    def status(self, coll_name=None, resource_id=None):
+    def status(self, coll_name, resource_id):
         """
-        Fetch some aggregated statistics about a collection.
+        Fetch status for a single resource
         """
-        if coll_name and resource_id:
-            return self._resource_status(coll_name, resource_id)
-        elif coll_name:
-            return self._coll_status(coll_name)
+        resource_id = str(resource_id)
+        self._validate_resource_id(coll_name, resource_id)
+        coll = self.collections[coll_name]
+        status = coll.db_status.get(resource_id.encode())
+        if status:
+            return status.decode()
         else:
-            raise TypeError("Pass in a collection name or both a collection name and resource ID.")
+            return 'unavailable'
+
+    def stats(self, coll_name=None):
+        if coll_name:
+            # Get the total status counts for a single collection
+            return self._coll_stats(coll_name)
+        # Get totals for every collection
+        counts = {}  # type: dict
+        for coll_name in self.collections:
+            counts[coll_name] = self._coll_stats(coll_name)
+        return counts
 
     def _validate_coll_name(self, coll_name):
         """
@@ -118,27 +130,30 @@ class Project:
         with open(log_path) as fd:
             return fd.read()
 
-    def _resource_status(self, coll_name, resource_id):
-        """
-        Fetch stats for a single resource
-        """
-        resource_id = str(resource_id)
-        self._validate_resource_id(coll_name, resource_id)
-        res_path = os.path.join(self.basedir, coll_name, resource_id)
-        status_path = os.path.join(res_path, _STATUS_FILENAME)
-        with open(status_path) as fd:
-            status = fd.read()
-        return status
-
-    def _coll_status(self, coll_name):
+    def _coll_stats(self, coll_name):
         """
         Fetch stats for a whole collection
         """
         self._validate_coll_name(coll_name)
         coll = self.collections[coll_name]
-        return coll.status
+        ret = {
+            'complete': 0,
+            'error': 0,
+            'pending': 0,
+            'unavailable': 0,
+            'total': 0
+        }
+        keys = set(ret.keys())
+        for key, val in coll.db_status:
+            val_str = val.decode()
+            if val_str in keys:
+                ret[val_str] += 1
+            else:
+                ret['unavailable'] += 1
+            ret['total'] += 1
+        return {'counts': ret}
 
-    def find_by_status(self, coll_name, status='completed'):
+    def find_by_status(self, coll_name, status='complete'):
         """
         Return a list of resource ids for a collection based on their current status
         """
@@ -162,11 +177,11 @@ class Project:
         ident = str(ident)
         coll = self.collections[coll_name]
         res = Resource(coll, ident)
-        if not recompute and res.status != 'pending':
+        if not recompute and res.status == 'complete':
             return res
         if args is None:
             args = {}
-        ctx = Context(coll_name, res.paths['basedir'])
+        ctx = Context(coll_name, res.paths['base'])
         # Submit the job
         print(f'Computing resource "{ident}" in "{coll_name}"')
         res.start_compute()
@@ -175,6 +190,7 @@ class Project:
         else:
             thread = threading.Thread(target=res.compute, args=(args, ctx), daemon=True)
             thread.start()
+            print('Started thread')
             return res
 
 
@@ -184,8 +200,6 @@ class Resource:
         self.coll = coll
         self.ident = ident
         basedir = os.path.join(coll.basedir, ident)
-        os.makedirs(basedir, exist_ok=True)
-        self.status = coll.db_status.get(ident.encode()).decode()
         self.paths = {
             'base': basedir,
             'error': os.path.join(basedir, _ERR_FILENAME),
@@ -196,18 +210,28 @@ class Resource:
             'result': os.path.join(basedir, _RESULT_FILENAME),
             'storage': os.path.join(basedir, _STORAGE_DIRNAME),
         }
+        # Initialize some basic directories, if absent
+        os.makedirs(basedir, exist_ok=True)
         os.makedirs(self.paths['storage'], exist_ok=True)
-        with open(self.paths['status']) as fd:
-            status_file = fd.read()
-        # Sync db status with file system status
-        if status_file != self.status:
-            self.status = status_file
-            coll.db_status.set(self.ident.encode(), self.status.encode())
+        # Set and load status
+        db_status = coll.db_status.get(ident.encode())
+        if db_status:
+            self.status = db_status.decode()
+        else:
+            self.status = 'unavailable'
+            self._set_status(self.status)
+        if self.status == 'pending' and os.path.exists(self.paths['status']):
+            # Sync db status with file system status
+            with open(self.paths['status']) as fd:
+                status_file = fd.read()
+            if status_file != self.status:
+                self.status = status_file
+                coll.db_status.put(self.ident.encode(), self.status.encode())
         # Load the result JSON
         self.result = None
-        if os.path.exists(self.paths['result']):
+        if self.status == 'complete' and os.path.exists(self.paths['result']):
             with open(self.paths['result']) as fd:
-                self.result = json.load(self.paths['result'])
+                self.result = json.load(fd)
         # Load start and end times
         self.start_time = _read_time(self.paths['start_time'])
         self.end_time = _read_time(self.paths['end_time'])
@@ -221,16 +245,17 @@ class Resource:
         for fn in to_overwrite:
             _touch(os.path.join(self.paths['base'], fn), overwrite=True)
         # Write out status
-        self.set_status('pending')
+        self._set_status('pending')
         # Write out start and end time
         self.start_time = _write_time(self.paths['start_time'], ts=_time())
         self.end_time = _write_time(self.paths['end_time'], ts=None)
 
-    def set_status(self, status):
+    def _set_status(self, status):
         """Write out status to file and db."""
         with open(self.paths['status'], 'w') as fd:
             fd.write(status)
-        self.coll.set(self.ident.encode(), status.encode())
+        self.coll.db_status.put(self.ident.encode(), status.encode())
+        self.status = status
 
     def compute(self, args, ctx):
         """
@@ -246,9 +271,11 @@ class Resource:
             traceback.print_exc()
             with open(self.paths['error'], 'a') as fd:
                 fd.write(format_exc)
+            self._set_status('error')
+            return self
+        finally:
             self.end_time = _write_time(self.paths['end_time'], ts=_time())
-            self.write_status('error')
-        self.write_status('complete')
+        self._set_status('complete')
         _json_dump(self.result, self.paths['result'])
         return self
 
