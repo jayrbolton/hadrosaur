@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "hadrosaur"
-version = "0.3.2"
-description = "[WIP] Manage a large amount of computed resources, such as files, imports, etc."
+version = "0.4.0"
+description = "Manage statuses for a large amount of data analysis resources, such as files, imports, etc."
 authors = ["Jay R Bolton <jayrbolton@gmail.com>"]
 readme = "README.md"
 homepage = "https://github.com/jayrbolton/hadrosaur"

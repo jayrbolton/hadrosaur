@@ -3,7 +3,6 @@ import time
 import json
 import os
 import logging
-import threading
 import traceback
 
 _START_FILENAME = 'start_time'
@@ -26,6 +25,21 @@ class Collection:
         os.makedirs(self.basedir, exist_ok=True)
         db_status_path = os.path.join(self.basedir, '.status')
         self.db_status = plyvel.DB(db_status_path, create_if_missing=True)
+        self.queue_dir = os.path.join(self.basedir, '.updates')
+        os.makedirs(self.queue_dir, exist_ok=True)
+
+    def update_db(self):
+        """
+        Update the status levelDB for each resource in the update queue directory.
+        """
+        for ident in os.listdir(self.queue_dir):
+            status_path = os.path.join(self.basedir, ident, _STATUS_FILENAME)
+            if os.path.exists(status_path):
+                with open(status_path) as fd:
+                    status = fd.read()
+            else:
+                status = 'unavailable'
+            self.db_status.put(ident.encode(), status.encode())
 
 
 class Project:
@@ -57,6 +71,7 @@ class Project:
         resource_id = str(resource_id)
         self._validate_resource_id(coll_name, resource_id)
         coll = self.collections[coll_name]
+        coll.update_db()
         status = coll.db_status.get(resource_id.encode())
         if status:
             return status.decode()
@@ -122,6 +137,7 @@ class Project:
         """
         self._validate_coll_name(coll_name)
         coll = self.collections[coll_name]
+        coll.update_db()
         ret = {
             'complete': 0,
             'error': 0,
@@ -145,6 +161,7 @@ class Project:
         """
         self._validate_coll_name(coll_name)
         coll = self.collections[coll_name]
+        coll.update_db()
         status_bin = status.encode()
         ids = []
         for key, value in coll.db_status:
@@ -152,16 +169,15 @@ class Project:
                 ids.append(key.decode())
         return ids
 
-    def fetch(self, coll_name, ident, args=None, recompute=False, block=False):
+    def fetch(self, coll_name, ident, args=None, recompute=False):
         """
         Compute a new entry for a resource, or fetch the precomputed entry.
         """
-        if coll_name not in self.collections:
-            raise RuntimeError(f"No such collection: {coll_name}")
         self._validate_coll_name(coll_name)
         # Return value
         ident = str(ident)
         coll = self.collections[coll_name]
+        coll.update_db()
         res = Resource(coll, ident)
         if not recompute and res.status == 'complete':
             return res
@@ -170,14 +186,7 @@ class Project:
         ctx = Context(coll_name, res.paths['base'])
         # Submit the job
         print(f'Computing resource "{ident}" in "{coll_name}"')
-        res.start_compute()
-        if block:
-            return res.compute(args, ctx)
-        else:
-            thread = threading.Thread(target=res.compute, args=(args, ctx), daemon=True)
-            thread.start()
-            print('Started thread')
-            return res
+        return res.compute(args, ctx)
 
 
 class Resource:
@@ -199,20 +208,12 @@ class Resource:
         # Initialize some basic directories, if absent
         os.makedirs(basedir, exist_ok=True)
         os.makedirs(self.paths['storage'], exist_ok=True)
-        # Set and load status
-        db_status = coll.db_status.get(ident.encode())
-        if db_status:
-            self.status = db_status.decode()
+        # Load the resource's status
+        if os.path.exists(self.paths['status']):
+            with open(self.paths['status']) as fd:
+                self.status = fd.read()
         else:
             self.status = 'unavailable'
-            self._set_status(self.status)
-        if self.status == 'pending' and os.path.exists(self.paths['status']):
-            # Sync db status with file system status
-            with open(self.paths['status']) as fd:
-                status_file = fd.read()
-            if status_file != self.status:
-                self.status = status_file
-                coll.db_status.put(self.ident.encode(), self.status.encode())
         # Load the result JSON
         self.result = None
         if self.status == 'complete' and os.path.exists(self.paths['result']):
@@ -222,9 +223,20 @@ class Resource:
         self.start_time = _read_time(self.paths['start_time'])
         self.end_time = _read_time(self.paths['end_time'])
 
-    def start_compute(self):
+    def _set_status(self, status):
+        """Write out status to a file and place this resource's in the collection's queue to update."""
+        with open(self.paths['status'], 'w') as fd:
+            fd.write(status)
+        self.status = status
+        # Touch a file with our identifier as the name in the collection's
+        # queue directory. When we do project.status(), this resource will first
+        # get updated in the collection's leveldb.
+        queue_path = os.path.join(self.coll.queue_dir, self.ident)
+        _touch(queue_path)
+
+    def compute(self, args, ctx):
         """
-        Set various state for a resource in preparation of recomputing it.
+        Run the function to compute a resource, handling and saving errors.
         """
         # Clear out resource files
         to_overwrite = [_RESULT_FILENAME, _ERR_FILENAME, _LOG_FILENAME]
@@ -235,18 +247,6 @@ class Resource:
         # Write out start and end time
         self.start_time = _write_time(self.paths['start_time'], ts=_time())
         self.end_time = _write_time(self.paths['end_time'], ts=None)
-
-    def _set_status(self, status):
-        """Write out status to file and db."""
-        with open(self.paths['status'], 'w') as fd:
-            fd.write(status)
-        self.coll.db_status.put(self.ident.encode(), status.encode())
-        self.status = status
-
-    def compute(self, args, ctx):
-        """
-        Run the function to compute a resource, handling and saving errors.
-        """
         func = self.coll.func
         try:
             self.result = func(self.ident, args, ctx)

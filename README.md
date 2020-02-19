@@ -2,11 +2,11 @@
 
 ![logo](docs/logo.jpg)
 
-Do you want to compute thousands of (probably asynchronous) jobs that compute some set of resources (files, metadata, database imports, etc) in parallel, but have a hard time tracking completion status, errors, logs, and other runtime data? That's what this is for.
+Hadrosaur makes it easy to track the completion status, errors, and logs of large amounts of resources (files, metadata, analytics, database imports, etc.).
 
-This library uses a combination of LevelDB and the file system to track logs, errors, and run state for your tasks.
+You simply define your resource as a decorated Python function that can create files and save metadata using an identifier in a certain namespace. Later on, you can quickly fetch the status and results of previously computed resources.
 
-> **Work in progress**
+This library uses a combination of LevelDB and the file system to track the state of your tasks.
 
 ## Quick usage tutorial
 
@@ -54,7 +54,6 @@ Use the `proj.fetch(collection_name, ident)` method to compute and cache resourc
 Keyword arguments:
 
 * `args` -- an optional dict of extra arguments for the resource compute function
-* `block` -- boolean (default False) of whether to synchronously wait for the execution of the compute function. If non-blocking, then the function will run in a Python thread and the resource's status will be set to "pending". Call fetch again later to see if the function has completed and the resource status is "complete".
 * `recompute` -- force the resource to be re-computed, even if it has already been computed
 
 What happens when you fetch a resource:
