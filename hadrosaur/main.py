@@ -40,6 +40,8 @@ class Collection:
             else:
                 status = 'unavailable'
             self.db_status.put(ident.encode(), status.encode())
+            queue_file_path = os.path.join(self.queue_dir, ident)
+            os.remove(queue_file_path)
 
 
 class Project:
