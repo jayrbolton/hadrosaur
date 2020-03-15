@@ -23,8 +23,7 @@ class Collection:
         self.name = name
         self.basedir = os.path.join(proj_dir, name)
         os.makedirs(self.basedir, exist_ok=True)
-        db_status_path = os.path.join(self.basedir, '.status')
-        self.db_status = plyvel.DB(db_status_path, create_if_missing=True)
+        self.db_status_path = os.path.join(self.basedir, '.status')
         self.queue_dir = os.path.join(self.basedir, '.updates')
         os.makedirs(self.queue_dir, exist_ok=True)
 
@@ -32,16 +31,20 @@ class Collection:
         """
         Update the status levelDB for each resource in the update queue directory.
         """
-        for ident in os.listdir(self.queue_dir):
-            status_path = os.path.join(self.basedir, ident, _STATUS_FILENAME)
-            if os.path.exists(status_path):
-                with open(status_path) as fd:
-                    status = fd.read()
-            else:
-                status = 'unavailable'
-            self.db_status.put(ident.encode(), status.encode())
-            queue_file_path = os.path.join(self.queue_dir, ident)
-            os.remove(queue_file_path)
+        db = plyvel.DB(self.db_status_path, create_if_missing=True)
+        try:
+            for ident in os.listdir(self.queue_dir):
+                status_path = os.path.join(self.basedir, ident, _STATUS_FILENAME)
+                if os.path.exists(status_path):
+                    with open(status_path) as fd:
+                        status = fd.read()
+                else:
+                    status = 'unavailable'
+                db.put(ident.encode(), status.encode())
+                queue_file_path = os.path.join(self.queue_dir, ident)
+                os.remove(queue_file_path)
+        finally:
+            db.close()
 
 
 class Project:
@@ -74,7 +77,11 @@ class Project:
         self._validate_resource_id(coll_name, resource_id)
         coll = self.collections[coll_name]
         coll.update_db()
-        status = coll.db_status.get(resource_id.encode())
+        db = plyvel.DB(coll.db_status_path, create_if_missing=True)
+        try:
+            status = db.get(resource_id.encode())
+        finally:
+            db.close()
         if status:
             return status.decode()
         else:
@@ -148,13 +155,17 @@ class Project:
             'total': 0
         }
         keys = set(ret.keys())
-        for key, val in coll.db_status:
-            val_str = val.decode()
-            if val_str in keys:
-                ret[val_str] += 1
-            else:
-                ret['unavailable'] += 1
-            ret['total'] += 1
+        db = plyvel.DB(coll.db_status_path, create_if_missing=True)
+        try:
+            for key, val in db:
+                val_str = val.decode()
+                if val_str in keys:
+                    ret[val_str] += 1
+                else:
+                    ret['unavailable'] += 1
+                ret['total'] += 1
+        finally:
+            db.close()
         return {'counts': ret}
 
     def find_by_status(self, coll_name, status='complete'):
@@ -166,9 +177,13 @@ class Project:
         coll.update_db()
         status_bin = status.encode()
         ids = []
-        for key, value in coll.db_status:
-            if value == status_bin:
-                ids.append(key.decode())
+        db = plyvel.DB(coll.db_status_path, create_if_missing=True)
+        try:
+            for key, value in db:
+                if value == status_bin:
+                    ids.append(key.decode())
+        finally:
+            db.close()
         return ids
 
     def fetch(self, coll_name, ident, args=None, recompute=False):
