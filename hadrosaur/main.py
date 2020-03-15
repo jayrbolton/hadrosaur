@@ -324,9 +324,8 @@ def _write_time(path, ts=None):
     """
     if not ts:
         ts = ''
-    ts = str(ts)
     with open(path, 'w') as fd:
-        fd.write(ts)
+        fd.write(str(ts))
     return ts
 
 
