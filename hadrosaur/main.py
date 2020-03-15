@@ -13,8 +13,6 @@ _RESULT_FILENAME = 'result.json'
 _STORAGE_DIRNAME = 'storage'
 _LOG_FILENAME = 'run.log'
 
-# TODO log colors
-
 
 class Collection:
 
